@@ -1,0 +1,162 @@
+name: Release Binary
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g., v6.16.7)'
+        required: true
+        type: string
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            artifact_name: httpyac-linux-x64
+          - os: ubuntu-latest
+            target: linux-arm64
+            artifact_name: httpyac-linux-arm64
+          - os: macos-latest
+            target: macos-x64
+            artifact_name: httpyac-macos-x64
+          - os: macos-latest
+            target: macos-arm64
+            artifact_name: httpyac-macos-arm64
+          - os: windows-latest
+            target: win-x64
+            artifact_name: httpyac-win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run docker_build
+
+      - name: Install pkg
+        run: npm install -g @yao-pkg/pkg
+
+      - name: Build binary (linux-arm64)
+        if: matrix.target == 'linux-arm64'
+        run: |
+          pkg . --target node20-linux-arm64 --output ${{ matrix.artifact_name }} --compress GZip
+
+      - name: Build binary (other platforms)
+        if: matrix.target != 'linux-arm64'
+        run: |
+          pkg . --target node20-${{ matrix.target }} --output ${{ matrix.artifact_name }} --compress GZip
+
+      - name: Create tarball (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x ${{ matrix.artifact_name }}
+          tar -czvf ${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}
+
+      - name: Create zip (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path "${{ matrix.artifact_name }}.exe" -DestinationPath "${{ matrix.artifact_name }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.artifact_name }}.tar.gz
+            ${{ matrix.artifact_name }}.zip
+          if-no-files-found: ignore
+
+  upload-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec sh -c 'sha256sum "$1" | sed "s|.*/||"' _ {} \; > checksums.txt
+          cat checksums.txt
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    needs: upload-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get release info
+        id: release
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Wait for release assets
+        run: sleep 10
+
+      - name: Download checksums
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${TAG}/checksums.txt" -o checksums.txt
+          cat checksums.txt
+
+      - name: Get SHA256 for macOS arm64
+        id: sha
+        run: |
+          SHA_ARM64=$(grep "httpyac-macos-arm64.tar.gz" checksums.txt | awk '{print $1}')
+          SHA_X64=$(grep "httpyac-macos-x64.tar.gz" checksums.txt | awk '{print $1}')
+          echo "arm64=$SHA_ARM64" >> $GITHUB_OUTPUT
+          echo "x64=$SHA_X64" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: Mopip77/homebrew-tap
+          event-type: update-httpyac
+          client-payload: |
+            {
+              "version": "${{ steps.release.outputs.version }}",
+              "tag": "${{ steps.release.outputs.tag }}",
+              "sha256_arm64": "${{ steps.sha.outputs.arm64 }}",
+              "sha256_x64": "${{ steps.sha.outputs.x64 }}"
+            }
