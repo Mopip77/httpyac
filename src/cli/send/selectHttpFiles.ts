@@ -69,6 +69,22 @@ function hasTag(httpRegion: models.HttpRegion, tags: Array<string> | undefined) 
 }
 
 async function selectManualHttpFiles(httpFiles: Array<models.HttpFile>): Promise<SelectActionResult> {
+  // Count total non-global regions across all files
+  const allNonGlobalRegions: Array<{ httpRegion: models.HttpRegion; httpFile: models.HttpFile }> = [];
+  for (const httpFile of httpFiles) {
+    for (const httpRegion of httpFile.httpRegions) {
+      if (!httpRegion.isGlobal()) {
+        allNonGlobalRegions.push({ httpRegion, httpFile });
+      }
+    }
+  }
+
+  // If there's only one non-global region, execute it directly without user selection
+  if (allNonGlobalRegions.length === 1) {
+    const { httpRegion, httpFile } = allNonGlobalRegions[0];
+    return [{ httpRegions: [httpRegion], httpFile }];
+  }
+
   const httpRegionMap: Record<string, SelectActionResult> = {};
   const hasManyFiles = httpFiles.length > 1;
   const cwd = `${process.cwd()}`;
