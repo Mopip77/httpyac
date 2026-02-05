@@ -1,17 +1,17 @@
 {
-  "name": "httpyac",
+  "name": "@mopip77/httpyac",
   "displayName": "httpYac - Yet Another Client",
   "license": "MIT",
-  "publisher": "AnWeber",
+  "publisher": "mopip77",
   "description": "HTTP/REST CLI Client for *.http files",
   "version": "6.16.7",
-  "homepage": "https://github.com/AnWeber/httpyac",
+  "homepage": "https://github.com/mopip77/httpyac",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AnWeber/httpyac"
+    "url": "https://github.com/mopip77/httpyac"
   },
   "bugs": {
-    "url": "https://github.com/AnWeber/httpyac/issues"
+    "url": "https://github.com/mopip77/httpyac/issues"
   },
   "icon": "icon.png",
   "keywords": [
