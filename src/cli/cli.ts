@@ -5,6 +5,7 @@ import * as utils from '../utils';
 import { initIOProvider } from './initCliProvider';
 import { oauth2Command } from './oauth2';
 import { sendCommand } from './send';
+import { shellInitCommand } from './shell-init';
 
 export async function createProgram() {
   const program = new Command();
@@ -13,7 +14,8 @@ export async function createProgram() {
     .version(packageJson?.version || '0.0.1')
     .description('httpYac - Quickly and easily send REST, SOAP, GraphQL and gRPC requests')
     .addCommand(oauth2Command())
-    .addCommand(sendCommand(), { isDefault: true });
+    .addCommand(sendCommand(), { isDefault: true })
+    .addCommand(shellInitCommand());
   return program;
 }
 
